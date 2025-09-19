@@ -1,8 +1,8 @@
 import logging
 from functools import wraps
 from typing import Dict, Any, Callable
-from src.utils.jwt_auth import create_jwt_manager
-from src.services.user_service import UserService
+from utils.jwt_auth import create_jwt_manager
+from services.user_service import UserService
 
 
 logger = logging.getLogger(__name__)

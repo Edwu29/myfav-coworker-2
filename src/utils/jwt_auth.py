@@ -60,16 +60,17 @@ def get_jwt_secret() -> str:
         return secret
     
     # In production, get from AWS Parameter Store
-    import boto3
-    ssm = boto3.client('ssm')
     try:
+        import boto3
+        ssm = boto3.client('ssm')
         response = ssm.get_parameter(
             Name='/myfav-coworker/jwt-secret-key',
             WithDecryption=True
         )
         return response['Parameter']['Value']
     except Exception as e:
-        raise RuntimeError(f"Failed to retrieve JWT secret: {e}")
+        # Fallback for local development without AWS credentials
+        raise RuntimeError(f"JWT_SECRET_KEY environment variable not set and AWS Parameter Store unavailable: {e}")
 
 
 def create_jwt_manager() -> JWTManager:

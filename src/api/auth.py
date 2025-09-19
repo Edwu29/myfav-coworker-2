@@ -2,10 +2,10 @@ import json
 import logging
 import secrets
 from typing import Dict, Any
-from src.services.github_service import GitHubService
-from src.services.user_service import UserService
-from src.utils.jwt_auth import create_jwt_manager
-from src.models.user import AuthTokenResponse
+from services.github_service import GitHubService
+from services.user_service import UserService
+from utils.jwt_auth import create_jwt_manager
+from models.user import AuthTokenResponse
 
 
 logger = logging.getLogger(__name__)

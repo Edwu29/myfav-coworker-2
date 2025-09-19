@@ -3,7 +3,7 @@ import logging
 from typing import Optional, Tuple
 from authlib.integrations.requests_client import OAuth2Session
 import requests
-from src.models.user import GitHubUserProfile
+from models.user import GitHubUserProfile
 
 
 logger = logging.getLogger(__name__)

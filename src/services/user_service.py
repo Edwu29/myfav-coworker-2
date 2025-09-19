@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Optional
 import boto3
 from botocore.exceptions import ClientError
-from src.models.user import User, GitHubUserProfile
-from src.utils.encryption import create_token_encryptor
+from models.user import User, GitHubUserProfile
+from utils.encryption import create_token_encryptor
 
 
 logger = logging.getLogger(__name__)
