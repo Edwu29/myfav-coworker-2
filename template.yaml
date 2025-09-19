@@ -3,15 +3,37 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   myfav-coworker
 
-  FastMCP-based service for PR simulation and testing
+  Sample SAM Template for myfav-coworker
 
 Globals:
   Function:
     Timeout: 30
-    MemorySize: 512
+    MemorySize: 128
     Runtime: python3.11
+    Environment:
+      Variables:
+        DYNAMODB_TABLE_NAME: !Ref MainTable
+        GITHUB_REDIRECT_URI: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/auth/github/callback"
 
 Resources:
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: myfav-coworker-main
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
   MyfavCoworkerApi:
     Type: AWS::Serverless::Function
     Properties:
@@ -27,6 +49,46 @@ Resources:
             Path: /health
             Method: get
 
+  GitHubLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: api.auth.github_login
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/github-client-id
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/github-client-secret
+      Events:
+        GitHubLogin:
+          Type: Api
+          Properties:
+            Path: /auth/github
+            Method: get
+
+  GitHubCallbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: api.auth.github_callback
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/github-client-id
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/github-client-secret
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/github-token-encryption-key
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/jwt-secret-key
+      Events:
+        GitHubCallback:
+          Type: Api
+          Properties:
+            Path: /auth/github/callback
+            Method: get
+
 Outputs:
   MyfavCoworkerApi:
     Description: "API Gateway endpoint URL for myfav-coworker function"
@@ -37,3 +99,12 @@ Outputs:
   MyfavCoworkerFunctionIamRole:
     Description: "Implicit IAM Role created for myfav-coworker function"
     Value: !GetAtt MyfavCoworkerApiRole.Arn
+  MyFavCoworkerApi:
+    Description: "API Gateway endpoint URL for Prod stage for My Fav Coworker function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  GitHubLoginUrl:
+    Description: "GitHub OAuth login URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/auth/github"
+  DynamoDBTableName:
+    Description: "DynamoDB table name"
+    Value: !Ref MainTable
