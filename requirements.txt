@@ -1,0 +1,7 @@
+fastmcp>=0.1.0
+pydantic>=2.7.0
+pytest>=8.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+moto>=4.2.0

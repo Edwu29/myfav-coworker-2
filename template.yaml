@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  myfav-coworker
+
+  FastMCP-based service for PR simulation and testing
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.11
+
+Resources:
+  MyfavCoworkerApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Architectures:
+        - x86_64
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+
+Outputs:
+  MyfavCoworkerApi:
+    Description: "API Gateway endpoint URL for myfav-coworker function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/health/"
+  MyfavCoworkerFunction:
+    Description: "myfav-coworker Lambda Function ARN"
+    Value: !GetAtt MyfavCoworkerApi.Arn
+  MyfavCoworkerFunctionIamRole:
+    Description: "Implicit IAM Role created for myfav-coworker function"
+    Value: !GetAtt MyfavCoworkerApiRole.Arn
