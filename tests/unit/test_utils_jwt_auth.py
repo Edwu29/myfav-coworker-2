@@ -192,7 +192,7 @@ class TestGetJWTSecret:
         mock_boto_client.return_value = mock_ssm
         mock_ssm.get_parameter.side_effect = Exception("Parameter not found")
         
-        with pytest.raises(RuntimeError, match="Failed to retrieve JWT secret"):
+        with pytest.raises(RuntimeError, match="JWT_SECRET_KEY environment variable not set and AWS Parameter Store unavailable"):
             get_jwt_secret()
 
 

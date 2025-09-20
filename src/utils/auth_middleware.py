@@ -92,3 +92,50 @@ def require_auth(f: Callable) -> Callable:
 def get_current_user(event: Dict[str, Any]) -> Dict[str, str]:
     """Extract current user information from authenticated event."""
     return event.get('user', {})
+
+
+def get_user_from_token(event: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Extract and validate user from JWT token in event headers.
+    
+    Args:
+        event: API Gateway event containing Authorization header
+        
+    Returns:
+        User information dictionary
+        
+    Raises:
+        Exception: If token is invalid or user not found
+    """
+    # Extract Authorization header
+    headers = event.get('headers', {})
+    auth_header = headers.get('Authorization') or headers.get('authorization')
+    
+    if not auth_header:
+        raise Exception("Missing Authorization header")
+    
+    # Extract token from Bearer format
+    if not auth_header.startswith('Bearer '):
+        raise Exception("Invalid Authorization header format")
+    
+    token = auth_header[7:]  # Remove 'Bearer ' prefix
+    
+    # Validate JWT token
+    jwt_manager = create_jwt_manager()
+    payload = jwt_manager.validate_token(token)
+    
+    if not payload:
+        raise Exception("Invalid or expired token")
+    
+    # Verify user exists in database
+    user_service = UserService()
+    user = user_service.get_user_by_github_id(payload['github_id'])
+    
+    if not user:
+        raise Exception(f"User not found for GitHub ID: {payload['github_id']}")
+    
+    return {
+        'user_id': user.user_id,
+        'github_id': user.github_id,
+        'github_username': user.github_username
+    }

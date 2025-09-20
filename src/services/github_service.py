@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from authlib.integrations.requests_client import OAuth2Session
 import requests
 from models.user import GitHubUserProfile
@@ -135,3 +135,134 @@ class GitHubService:
             
         except Exception:
             return False
+    
+    def get_pull_request(self, owner: str, repo: str, pull_number: int, access_token: str) -> Dict[str, Any]:
+        """
+        Fetch pull request details from GitHub API.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            pull_number: Pull request number
+            access_token: GitHub access token
+            
+        Returns:
+            Pull request data from GitHub API
+            
+        Raises:
+            Exception: If API request fails or PR not found
+        """
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'myfav-coworker/1.0'
+            }
+            
+            url = f"{self.api_base_url}/repos/{owner}/{repo}/pulls/{pull_number}"
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 404:
+                raise Exception(f"Pull request not found: {owner}/{repo}/pull/{pull_number}")
+            elif response.status_code == 403:
+                raise Exception(f"Access denied to repository: {owner}/{repo}")
+            
+            response.raise_for_status()
+            pr_data = response.json()
+            
+            logger.info(f"Successfully fetched PR data: {owner}/{repo}/pull/{pull_number}")
+            return pr_data
+            
+        except requests.RequestException as e:
+            logger.error(f"GitHub API request failed: {e}")
+            raise Exception(f"Failed to fetch pull request data: {e}")
+        except Exception as e:
+            logger.error(f"Failed to fetch PR {owner}/{repo}/pull/{pull_number}: {e}")
+            raise
+    
+    def get_pull_request_diff(self, owner: str, repo: str, pull_number: int, access_token: str) -> str:
+        """
+        Fetch pull request diff from GitHub API.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            pull_number: Pull request number
+            access_token: GitHub access token
+            
+        Returns:
+            Diff content as string
+            
+        Raises:
+            Exception: If API request fails or PR not found
+        """
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/vnd.github.v3.diff',
+                'User-Agent': 'myfav-coworker/1.0'
+            }
+            
+            url = f"{self.api_base_url}/repos/{owner}/{repo}/pulls/{pull_number}"
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 404:
+                raise Exception(f"Pull request not found: {owner}/{repo}/pull/{pull_number}")
+            elif response.status_code == 403:
+                raise Exception(f"Access denied to repository: {owner}/{repo}")
+            
+            response.raise_for_status()
+            diff_content = response.text
+            
+            logger.info(f"Successfully fetched PR diff: {owner}/{repo}/pull/{pull_number}")
+            return diff_content
+            
+        except requests.RequestException as e:
+            logger.error(f"GitHub API request failed: {e}")
+            raise Exception(f"Failed to fetch pull request diff: {e}")
+        except Exception as e:
+            logger.error(f"Failed to fetch PR diff {owner}/{repo}/pull/{pull_number}: {e}")
+            raise
+    
+    def get_repository_info(self, owner: str, repo: str, access_token: str) -> Dict[str, Any]:
+        """
+        Fetch repository information from GitHub API.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            access_token: GitHub access token
+            
+        Returns:
+            Repository data from GitHub API
+            
+        Raises:
+            Exception: If API request fails or repository not found
+        """
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'myfav-coworker/1.0'
+            }
+            
+            url = f"{self.api_base_url}/repos/{owner}/{repo}"
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 404:
+                raise Exception(f"Repository not found: {owner}/{repo}")
+            elif response.status_code == 403:
+                raise Exception(f"Access denied to repository: {owner}/{repo}")
+            
+            response.raise_for_status()
+            repo_data = response.json()
+            
+            logger.info(f"Successfully fetched repository info: {owner}/{repo}")
+            return repo_data
+            
+        except requests.RequestException as e:
+            logger.error(f"GitHub API request failed: {e}")
+            raise Exception(f"Failed to fetch repository information: {e}")
+        except Exception as e:
+            logger.error(f"Failed to fetch repository {owner}/{repo}: {e}")
+            raise

@@ -104,12 +104,26 @@ class UserService:
             logger.error(f"Failed to update last login for GitHub ID {github_id}: {e}")
             return False
     
-    def get_decrypted_github_token(self, user: User) -> str:
-        """Get decrypted GitHub token for a user."""
+    def update_user(self, user: User) -> User:
+        """Update user information in DynamoDB."""
         try:
+            item = user.to_dynamodb_item()
+            self.table.put_item(Item=item)
+            logger.info(f"Updated user: {user.user_id}")
+            return user
+        except ClientError as e:
+            logger.error(f"Failed to update user {user.user_id}: {e}")
+            raise RuntimeError(f"Failed to update user: {e}")
+    
+    def get_decrypted_github_token(self, github_id: str) -> str:
+        """Get decrypted GitHub token for a user by GitHub ID."""
+        try:
+            user = self.get_user_by_github_id(github_id)
+            if not user:
+                raise RuntimeError("User not found")
             return self.encryptor.decrypt_token(user.encrypted_github_token)
         except Exception as e:
-            logger.error(f"Failed to decrypt GitHub token for user {user.user_id}: {e}")
+            logger.error(f"Failed to decrypt GitHub token for GitHub ID {github_id}: {e}")
             raise RuntimeError("Failed to decrypt GitHub token")
     
     def update_github_token(self, github_id: str, new_token: str) -> bool:
