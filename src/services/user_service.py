@@ -17,8 +17,24 @@ class UserService:
     
     def __init__(self):
         """Initialize user service with DynamoDB client."""
-        self.dynamodb = boto3.resource('dynamodb')
-        self.table_name = os.getenv('DYNAMODB_TABLE_NAME', 'myfav-coworker-main')
+        # Check if running locally (SAM local sets AWS_SAM_LOCAL=true)
+        is_local = os.getenv('AWS_SAM_LOCAL') == 'true' or os.getenv('AWS_ENDPOINT_URL')
+        
+        if is_local:
+            # Use local DynamoDB
+            self.dynamodb = boto3.resource(
+                'dynamodb',
+                endpoint_url='http://host.docker.internal:8000',
+                region_name='us-east-1',
+                aws_access_key_id='dummy',
+                aws_secret_access_key='dummy'
+            )
+            self.table_name = 'myfav-coworker-main-local'
+        else:
+            # Use AWS DynamoDB
+            self.dynamodb = boto3.resource('dynamodb')
+            self.table_name = os.getenv('DYNAMODB_TABLE_NAME', 'myfav-coworker-main')
+        
         self.table = self.dynamodb.Table(self.table_name)
         self.encryptor = create_token_encryptor()
     
