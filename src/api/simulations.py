@@ -6,6 +6,7 @@ import re
 import boto3
 from typing import Dict, Any
 from pydantic import ValidationError
+from datetime import datetime, timezone
 
 from models.pull_request import PullRequestSubmission, PullRequestResponse
 from models.simulation_job import SimulationJobModel, JobStatus
@@ -139,17 +140,45 @@ def submit_simulation_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
                 "body": json.dumps({"error": "Failed to create simulation job"})
             }
         
-        # Return success response
-        status_value = job.status.value if hasattr(job.status, 'value') else str(job.status)
-        response = PullRequestResponse(
-            job_id=job.job_id,
-            status=status_value
-        )
+        # Auto-start simulation by sending to SQS queue
+        try:
+            sqs = boto3.client('sqs')
+            queue_url = user_service._get_sqs_queue_url()
+            
+            message_body = {
+                "job_id": job.job_id,
+                "action": "start_simulation",
+                "user_id": user_id,
+                "pr_url": job.pr_url,
+                "pr_owner": job.pr_owner,
+                "pr_repo": job.pr_repo,
+                "pr_number": job.pr_number,
+                "pr_head_sha": job.pr_head_sha,
+                "pr_base_sha": job.pr_base_sha
+            }
+            
+            sqs.send_message(
+                QueueUrl=queue_url,
+                MessageBody=json.dumps(message_body),
+                MessageAttributes={
+                    'action': {
+                        'StringValue': 'start_simulation',
+                        'DataType': 'String'
+                    }
+                }
+            )
+            
+            logger.info(f"Queued simulation job {job.job_id} for processing")
+            
+        except Exception as e:
+            logger.warning(f"Failed to queue simulation job {job.job_id}: {e}")
+            # Don't fail the request if queueing fails - job is still created
         
+        # Return success response with job_id only (per API spec)
         return {
             "statusCode": 202,
             "headers": {"Content-Type": "application/json"},
-            "body": response.model_dump_json()
+            "body": json.dumps({"job_id": job.job_id})
         }
         
     except Exception as e:
@@ -280,3 +309,5 @@ def get_simulation_status_handler(event: Dict[str, Any], context: Any) -> Dict[s
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Internal server error"})
         }
+
+

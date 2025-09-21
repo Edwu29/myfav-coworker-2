@@ -38,6 +38,14 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
 
+  SimulationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: myfav-coworker-simulation-queue
+      VisibilityTimeout: 900
+      MessageRetentionPeriod: 1209600
+      ReceiveMessageWaitTimeSeconds: 20
+
   MyfavCoworkerApi:
     Type: AWS::Serverless::Function
     Properties:
@@ -46,9 +54,14 @@ Resources:
       Runtime: python3.13
       Architectures:
         - x86_64
+      Environment:
+        Variables:
+          SQS_QUEUE_URL: !Ref SimulationQueue
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MainTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt SimulationQueue.QueueName
         - SSMParameterReadPolicy:
             ParameterName: /myfav-coworker/github-client-id
         - SSMParameterReadPolicy:
@@ -64,6 +77,36 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
+  SimulationWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: worker.lambda_handler
+      Runtime: python3.13
+      Timeout: 900
+      MemorySize: 1024
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          SIMULATION_BROWSER_TIMEOUT: 30000
+          SIMULATION_SCRIPT_TIMEOUT: 300000
+          SIMULATION_HEADLESS: true
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MainTable
+        - SQSPollerPolicy:
+            QueueName: !GetAtt SimulationQueue.QueueName
+        - SSMParameterReadPolicy:
+            ParameterName: /myfav-coworker/github-token-encryption-key
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SimulationQueue.Arn
+            BatchSize: 1
+            MaximumBatchingWindowInSeconds: 0
+
 Outputs:
   ApiEndpoint:
     Description: "API Gateway endpoint URL"
@@ -77,3 +120,6 @@ Outputs:
   DynamoDBTableName:
     Description: "DynamoDB table name"
     Value: !Ref MainTable
+  SimulationQueueUrl:
+    Description: "SQS queue URL for simulation jobs"
+    Value: !Ref SimulationQueue
