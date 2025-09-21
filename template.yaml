@@ -5,6 +5,12 @@ Description: >
 
   Sample SAM Template for myfav-coworker
 
+Parameters:
+  GoogleApiKey:
+    Type: String
+    Description: Google API Key for Gemini AI agent functionality
+    NoEcho: true
+
 Globals:
   Function:
     Timeout: 300
@@ -92,6 +98,9 @@ Resources:
           SIMULATION_BROWSER_TIMEOUT: 30000
           SIMULATION_SCRIPT_TIMEOUT: 300000
           SIMULATION_HEADLESS: true
+          GOOGLE_API_KEY: !Ref GoogleApiKey
+          AI_AGENT_TIMEOUT: 60
+          AI_AGENT_MAX_RETRIES: 3
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MainTable

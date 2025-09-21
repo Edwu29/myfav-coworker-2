@@ -306,12 +306,17 @@ new file mode 100644"""
     
     def test_validate_environment_success(self):
         """Test environment validation success."""
-        with patch('services.simulation_service.playwright'):
+        with patch('builtins.__import__'):
             result = self.service.validate_environment()
             assert result is True
     
     def test_validate_environment_failure(self):
         """Test environment validation failure."""
-        with patch('services.simulation_service.playwright', side_effect=ImportError):
+        def mock_import(name, *args):
+            if name == 'playwright':
+                raise ImportError("Playwright not found")
+            return __import__(name, *args)
+        
+        with patch('builtins.__import__', side_effect=mock_import):
             result = self.service.validate_environment()
             assert result is False

@@ -8,12 +8,12 @@ from typing import Dict, Any
 from pydantic import ValidationError
 from datetime import datetime, timezone
 
-from models.pull_request import PullRequestSubmission, PullRequestResponse
-from models.simulation_job import SimulationJobModel, JobStatus
-from services.user_service import UserService
-from services.github_service import GitHubService
-from utils.auth_middleware import get_user_from_token
-from utils.pr_validation import parse_github_pr_url, PRValidationError
+from src.models.pull_request import PullRequestSubmission, PullRequestResponse
+from src.models.simulation_job import SimulationJobModel, JobStatus
+from src.services.user_service import UserService
+from src.services.github_service import GitHubService
+from src.utils.auth_middleware import get_user_from_token
+from src.utils.pr_validation import parse_github_pr_url, PRValidationError
 
 logger = logging.getLogger(__name__)
 
