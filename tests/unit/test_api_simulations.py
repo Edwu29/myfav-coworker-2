@@ -316,3 +316,4 @@ class TestGetSimulationStatusHandler:
         assert response['statusCode'] == 500
         response_body = json.loads(response['body'])
         assert 'error' in response_body
+

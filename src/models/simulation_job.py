@@ -11,6 +11,8 @@ class JobStatus(str, Enum):
     """Simulation job status enumeration."""
     PENDING = "pending"
     RUNNING = "running"
+    SIMULATION_RUNNING = "simulation_running"
+    SIMULATION_COMPLETED = "simulation_completed"
     COMPLETED = "completed"
     FAILED = "failed"
 
