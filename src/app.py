@@ -6,8 +6,8 @@ import json
 import logging
 import re
 from typing import Dict, Any
-from src.api.auth import github_login, github_callback
-from src.api.simulations import submit_simulation_handler, get_simulation_status_handler
+from api.auth import github_login, github_callback
+from api.simulations import submit_simulation_handler, get_simulation_status_handler
 
 # Configure structured logging
 logger = logging.getLogger(__name__)

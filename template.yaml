@@ -62,7 +62,7 @@ Resources:
         - x86_64
       Environment:
         Variables:
-          SQS_QUEUE_URL: !Ref SimulationQueue
+          SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/220843429308/myfav-coworker-simulation-queue
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MainTable

@@ -8,12 +8,13 @@ from typing import Dict, Any
 from pydantic import ValidationError
 from datetime import datetime, timezone
 
-from src.models.pull_request import PullRequestSubmission, PullRequestResponse
-from src.models.simulation_job import SimulationJobModel, JobStatus
-from src.services.user_service import UserService
-from src.services.github_service import GitHubService
-from src.utils.auth_middleware import get_user_from_token
-from src.utils.pr_validation import parse_github_pr_url, PRValidationError
+from models.pull_request import PullRequestSubmission, PullRequestResponse
+from models.simulation_job import SimulationJobModel, JobStatus
+from services.user_service import UserService
+from services.github_service import GitHubService
+from services.sqs_service import SQSService
+from utils.auth_middleware import get_user_from_token
+from utils.pr_validation import parse_github_pr_url, PRValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +143,7 @@ def submit_simulation_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
         
         # Auto-start simulation by sending to SQS queue
         try:
-            sqs = boto3.client('sqs')
-            queue_url = user_service._get_sqs_queue_url()
+            sqs_service = SQSService()
             
             message_body = {
                 "job_id": job.job_id,
@@ -157,16 +157,7 @@ def submit_simulation_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
                 "pr_base_sha": job.pr_base_sha
             }
             
-            sqs.send_message(
-                QueueUrl=queue_url,
-                MessageBody=json.dumps(message_body),
-                MessageAttributes={
-                    'action': {
-                        'StringValue': 'start_simulation',
-                        'DataType': 'String'
-                    }
-                }
-            )
+            message_id = sqs_service.send_message(message_body)
             
             logger.info(f"Queued simulation job {job.job_id} for processing")
             
@@ -309,5 +300,3 @@ def get_simulation_status_handler(event: Dict[str, Any], context: Any) -> Dict[s
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Internal server error"})
         }
-
-

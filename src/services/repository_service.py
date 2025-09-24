@@ -489,3 +489,74 @@ class RepositoryService:
                 relevant_files.append(file_info)
         
         return relevant_files
+    
+    def get_repository_path(self, owner: str, repo: str) -> str:
+        """
+        Get the local path for a repository based on owner/repo.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            
+        Returns:
+            Path to repository directory
+        """
+        # Create a consistent directory name based on owner/repo
+        repo_dir = f"{owner}_{repo}"
+        repo_path = self.base_path / repo_dir
+        return str(repo_path)
+    
+    def checkout_pr_branch(self, repo_path: str, pr_head_sha: str) -> bool:
+        """
+        Checkout to a specific commit SHA (PR head).
+        
+        Args:
+            repo_path: Path to local repository
+            pr_head_sha: Commit SHA to checkout
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            RepositoryError: If checkout operation fails
+        """
+        try:
+            if not os.path.exists(repo_path):
+                raise RepositoryError(f"Repository path does not exist: {repo_path}")
+            
+            # First, fetch all refs to ensure we have the latest commits
+            fetch_cmd = ['git', 'fetch', 'origin', '+refs/*:refs/*']
+            fetch_result = subprocess.run(
+                fetch_cmd,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if fetch_result.returncode != 0:
+                logger.warning(f"Git fetch warning: {fetch_result.stderr}")
+            
+            # Checkout the specific commit SHA
+            checkout_cmd = ['git', 'checkout', pr_head_sha]
+            result = subprocess.run(
+                checkout_cmd,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"Git checkout SHA failed: {result.stderr}")
+                raise RepositoryError(f"Failed to checkout SHA {pr_head_sha}: {result.stderr}")
+            
+            logger.info(f"Successfully checked out commit SHA: {pr_head_sha}")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Git checkout SHA operation timed out")
+            raise RepositoryError("SHA checkout operation timed out")
+        except Exception as e:
+            logger.error(f"Failed to checkout SHA {pr_head_sha}: {e}")
+            raise RepositoryError(f"SHA checkout failed: {e}")
