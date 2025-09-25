@@ -406,6 +406,20 @@ class TestRepositoryService:
         
         # Mock git fetch success, checkout failure
         def mock_git_commands(*args, **kwargs):
+            """
+            Test helper that simulates `subprocess.run` results for git commands.
+            
+            Given the invoked command (expected as the first positional argument), returns a Mock object:
+            - If the command is a git fetch (command[1] == 'fetch'): returns a result with returncode 0 and empty stderr.
+            - If the command is a git checkout (command[1] == 'checkout'): returns a result with returncode 1 and stderr "fatal: reference is not a tree: abc123".
+            
+            Parameters:
+                *args: Positional arguments forwarded from the mocked `subprocess.run`; the first argument should be the command sequence (list or tuple).
+                **kwargs: Additional keyword arguments forwarded from the mocked call.
+            
+            Returns:
+                Mock: A mock object mimicking the `subprocess.CompletedProcess`-like result with `returncode` and `stderr` attributes.
+            """
             cmd = args[0]
             if cmd[1] == 'fetch':
                 return Mock(returncode=0, stderr="")

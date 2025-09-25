@@ -18,7 +18,19 @@ class SimulationService:
     """Service for running browser automation simulations on PR code."""
     
     def __init__(self):
-        """Initialize simulation service."""
+        """
+        Create and configure a SimulationService instance.
+        
+        Initializes runtime configuration from environment variables and constructs required service clients.
+        Environment variables read:
+          - SIMULATION_BROWSER_TIMEOUT: browser timeout in milliseconds (default 30000).
+          - SIMULATION_SCRIPT_TIMEOUT: script timeout in milliseconds (default 300000).
+          - SIMULATION_HEADLESS: "true" or "false" to control headless browser mode (default "true").
+        
+        Also instantiates:
+          - repository_service: RepositoryService for repository/diff operations.
+          - ai_agent_service: AIAgentService for AI-driven test plan generation.
+        """
         self.browser_timeout = int(os.getenv('SIMULATION_BROWSER_TIMEOUT', '30000'))  # 30 seconds
         self.script_timeout = int(os.getenv('SIMULATION_SCRIPT_TIMEOUT', '300000'))  # 5 minutes
         self.headless = os.getenv('SIMULATION_HEADLESS', 'true').lower() == 'true'
@@ -27,14 +39,23 @@ class SimulationService:
         
     async def run_simulation(self, job: SimulationJobModel, repo_path: str) -> Dict[str, Any]:
         """
-        Run browser automation simulation for a PR.
+        Run a browser-based simulation for a pull request using an AI-generated test plan.
         
-        Args:
-            job: Simulation job with PR details
-            repo_path: Path to local repository clone
-            
+        Generates a test plan from the PR diff, executes the plan in a headless Chromium browser, analyzes per-test outcomes to determine an overall result, and returns a consolidated simulation report.
+        
+        Parameters:
+            job (SimulationJobModel): Simulation job containing PR details (e.g., base/head branches or SHAs and job_id).
+            repo_path (str): Filesystem path to the local repository clone for the PR.
+        
         Returns:
-            Simulation report with results
+            Dict[str, Any]: A report dictionary with the following keys:
+                - result (str): Overall simulation outcome (e.g., "pass", "fail", "conditional_pass").
+                - summary (str): Human-readable summary of the execution.
+                - execution_logs (List[str]): Collected logs from test execution.
+                - test_plan (Dict[str, Any] | None): AI-generated test plan used for execution, or None on failure.
+                - timestamp (str | None): ISO timestamp of execution start/completion, or None on failure.
+                - test_results (List[Dict[str, Any]]): Per-test-case results produced during execution.
+                - result_determination (Dict[str, Any]): Detailed determination including confidence, reasoning, risk assessment, and recommendations.
         """
         logger.info(f"Starting simulation for job {job.job_id} in {repo_path}")
         
@@ -86,14 +107,14 @@ class SimulationService:
     
     async def _generate_ai_test_plan(self, job: SimulationJobModel, repo_path: str) -> Dict[str, Any]:
         """
-        Generate AI-powered test plan by analyzing PR diff.
+        Generate an AI-powered test plan for a pull request by analyzing the repository diff.
         
-        Args:
-            job: Simulation job with PR details
-            repo_path: Path to repository
-            
+        Parameters:
+            job (SimulationJobModel): Simulation job containing PR details (e.g., base/head SHAs and pr_url).
+            repo_path (str): Filesystem path to the repository checkout to diff.
+        
         Returns:
-            AI-generated test plan
+            Dict[str, Any]: A dictionary representing the test plan (including keys such as `test_cases` and metadata) to be executed by the simulation. If AI generation fails, returns a deterministic fallback test plan containing `generated_by: 'fallback'` and a `reason` explaining the failure.
         """
         logger.info(f"Generating AI test plan for PR {job.pr_url}")
         
@@ -117,7 +138,12 @@ class SimulationService:
             return self._create_fallback_test_plan(str(e))
     
     async def _get_pr_diff(self, repo_path: str, base_sha: str, head_sha: str) -> str:
-        """Get PR diff using git command."""
+        """
+        Retrieve the git diff between two commits or refs for the repository at repo_path.
+        
+        Returns:
+            diff_output (str): Unified git diff text for `base_sha..head_sha`. Returns an empty string if the git command fails, times out, or an error occurs.
+        """
         try:
             cmd = ["git", "diff", f"{base_sha}..{head_sha}"]
             result = subprocess.run(
@@ -142,7 +168,19 @@ class SimulationService:
             return ""
     
     def _summarize_diff(self, diff_output: str) -> Dict[str, Any]:
-        """Create basic summary of diff output."""
+        """
+        Produce a compact summary of a git diff output.
+        
+        Parameters:
+            diff_output (str): Raw git diff text (as produced by `git diff`). May be empty.
+        
+        Returns:
+            Dict[str, Any]: Summary with keys:
+                - files_changed (int): Number of files modified (lines starting with 'diff --git').
+                - lines_added (int): Count of lines starting with '+'.
+                - lines_removed (int): Count of lines starting with '-'.
+                - has_diff (bool): True if `diff_output` contains any non-whitespace content, False otherwise.
+        """
         if not diff_output:
             return {"files_changed": 0, "lines_added": 0, "lines_removed": 0, "has_diff": False}
         
@@ -160,13 +198,16 @@ class SimulationService:
     
     def _create_fallback_test_plan(self, error_reason: str) -> Dict[str, Any]:
         """
-        Create a fallback test plan when AI generation fails.
+        Return a deterministic fallback test plan used when AI test plan generation fails.
         
-        Args:
-            error_reason: Reason for fallback
-            
+        The returned plan contains a single high-priority UI test case performing a basic application health check, an execution strategy, estimated duration, risk level, and metadata that records the fallback reason and generation source.
+        
+        Parameters:
+            error_reason (str): Human-readable reason why AI generation failed; incorporated into the plan's `reasoning` field.
+        
         Returns:
-            Fallback test plan
+            Dict[str, Any]: A fallback test plan dictionary with keys including `test_cases`, `execution_strategy`, `estimated_duration_minutes`,
+            `risk_level`, `summary`, `reasoning`, `generated_by`, and `agent_model`.
         """
         return {
             'test_cases': [
@@ -191,15 +232,23 @@ class SimulationService:
     
     async def _execute_test_plan(self, page: Page, test_plan: Dict[str, Any], repo_path: str) -> Dict[str, Any]:
         """
-        Execute AI-generated test plan using Playwright.
+        Execute an AI-generated test plan in the provided Playwright page and aggregate per-case results.
         
-        Args:
-            page: Playwright page instance
-            test_plan: AI-generated test plan to execute
-            repo_path: Repository path for context
-            
+        Parameters:
+            page (Page): Playwright page instance used to run browser interactions.
+            test_plan (Dict[str, Any]): Test plan containing a `test_cases` list and optional `summary` metadata.
+            repo_path (str): Path to the repository used as contextual reference for tests.
+        
         Returns:
-            Execution results with individual test case results
+            Dict[str, Any]: Aggregated execution result containing:
+                - success (bool): `True` if all test cases passed, `False` otherwise.
+                - summary (str): Human-readable summary of the execution outcome.
+                - logs (List[str]): Ordered log entries produced during execution.
+                - test_results (List[Dict[str, Any]]): Per-test-case results with keys `case_id`, `description`, `success`, `error` (optional), and `duration_seconds`.
+                - timestamp (str): ISO-8601 timestamp when execution finished.
+                - duration_seconds (float): Total execution duration in seconds.
+                - passed_count (int): Number of passing test cases.
+                - failed_count (int): Number of failing test cases.
         """
         from datetime import datetime, timezone
         
@@ -267,15 +316,29 @@ class SimulationService:
     
     async def _execute_test_case(self, page: Page, test_case: Dict[str, Any], logs: List[str]) -> Dict[str, Any]:
         """
-        Execute a single test case.
+        Execute a single test case defined by the test plan against the given Playwright page.
         
-        Args:
-            page: Playwright page instance
-            test_case: Individual test case to execute
-            logs: Shared logs list to append to
-            
+        The test_case dictionary must include an 'action' key indicating the operation to perform. Supported actions:
+        - "navigate_and_verify": navigates to http://localhost:3000, optionally waits for `target_element`, and records the page title.
+        - "click": clicks `target_element`.
+        - "type": fills `target_element` with `input_text`.
+        - "verify_text": checks that `expected_outcome` appears in the text content of `target_element`.
+        Unknown actions are logged and skipped without causing a failure.
+        
+        Parameters:
+            page (Page): Playwright page used to perform browser interactions.
+            test_case (Dict[str, Any]): Test case specification. Common keys:
+                - action (str): one of "navigate_and_verify", "click", "type", "verify_text".
+                - target_element (str): selector for the target DOM element (when applicable).
+                - input_text (str): text to type for "type" actions.
+                - expected_outcome (str): text expected for "verify_text" actions.
+            logs (List[str]): Mutable list to append human-readable execution logs.
+        
         Returns:
-            Test case execution result
+            Dict[str, Any]: Result object with:
+                - 'success' (bool): `true` when the action completed and checks passed, `false` otherwise.
+                - 'duration_seconds' (float): elapsed time for the test case.
+                - 'error' (str, optional): error message when 'success' is `false`.
         """
         from datetime import datetime, timezone
         
@@ -354,14 +417,26 @@ class SimulationService:
 
     def determine_simulation_result(self, test_results: List[Dict[str, Any]], test_plan: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Determine overall simulation result based on test case results and AI analysis.
+        Assess overall simulation outcome from per-test results and the AI-provided test plan.
         
-        Args:
-            test_results: List of individual test case results
-            test_plan: Original AI-generated test plan
-            
+        Evaluates pass rate, incorporates the test plan's risk_level, and produces a summary decision with confidence, reasoning, risk assessment, and actionable recommendation.
+        
+        Parameters:
+            test_results: List of per-test dictionaries; each entry must include a boolean `success` key indicating whether the test case passed.
+            test_plan: AI-generated test plan dictionary; may include `risk_level` (expected values: "low", "medium", "high") used to bias the risk assessment.
+        
         Returns:
-            Overall simulation result determination
+            A dictionary with these keys:
+            - overall_result: One of "pass", "conditional_pass", or "fail" describing the high-level outcome.
+            - confidence: Confidence level for the determination ("low", "medium", or "high").
+            - reasoning: Human-readable explanation of the decision and observed pass rate.
+            - risk_assessment: Assessed risk to the codebase ("low", "medium", or "high").
+            - recommendation: Suggested next step (e.g., merge, review, fix).
+            - pass_rate: Fraction of tests that passed (0.0–1.0).
+            - total_tests: Total number of executed tests.
+            - passed_tests: Number of tests that passed.
+            - failed_tests: Number of tests that failed.
+            - ai_risk_level: The `risk_level` value taken from the provided test plan (defaults to "medium" if absent).
         """
         if not test_results:
             return {
@@ -426,7 +501,12 @@ class SimulationService:
         }
     
     def validate_environment(self) -> bool:
-        """Validate that simulation environment is properly configured."""
+        """
+        Check whether the runtime environment has the Playwright dependency available.
+        
+        Returns:
+            True if Playwright is available, False otherwise.
+        """
         try:
             # Check if Playwright is available
             import playwright

@@ -21,14 +21,16 @@ logger = logging.getLogger(__name__)
 
 def submit_simulation_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Lambda handler for POST /simulations - Submit a new simulation job.
+    Handle POST /simulations: validate request and submit a new PR-based simulation job.
     
-    Args:
-        event: API Gateway event
-        context: Lambda context
-        
+    Authenticates the caller, validates the request body and GitHub PR URL, retrieves PR metadata using the user's GitHub token, creates and persists a SimulationJobModel, and attempts to enqueue a job message for processing. On success returns a response containing only the created job ID per API spec; failures return appropriate HTTP error responses.
+    
+    Parameters:
+        event (Dict[str, Any]): API Gateway event for the request (expects JSON body with `pr_url`).
+        context (Any): Lambda context object (unused).
+    
     Returns:
-        API Gateway response format
+        Dict[str, Any]: API Gateway-compatible response containing `statusCode`, `headers`, and `body`. On success `body` is JSON with `{"job_id": "<id>"}`; on error `body` contains an `error` message.
     """
     try:
         # Extract and validate authentication
@@ -183,14 +185,10 @@ def submit_simulation_handler(event: Dict[str, Any], context: Any) -> Dict[str, 
 
 def get_simulation_status_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Lambda handler for GET /simulations/{job_id} - Get simulation job status.
+    Retrieve the status and metadata of a simulation job by job ID, validating that the requester is authorized to access it.
     
-    Args:
-        event: API Gateway event
-        context: Lambda context
-        
     Returns:
-        API Gateway response format
+        dict: API Gateway response dictionary. On success (200) the body contains the job details (job_id, status, pr_url, timestamps, report, error_message, PR metadata). On error the body contains an `error` message and the response uses an appropriate HTTP status code (e.g., 400, 401, 403, 404, 500).
     """
     try:
         # Extract and validate authentication

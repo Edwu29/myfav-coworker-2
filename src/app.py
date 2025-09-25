@@ -73,10 +73,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 def handle_health_check() -> Dict[str, Any]:
     """
-    Handle health check endpoint.
-
+    Produce an API Gateway-compatible health check response.
+    
+    The response body is a JSON object containing `status`, `service`, `version`, and `table_name`. `table_name` is read from the `DYNAMODB_TABLE_NAME` environment variable and is `"NOT_SET"` if the variable is not present.
+    
     Returns:
-        200 OK response with JSON health status
+        dict: API Gateway response with `statusCode` 200, `Content-Type: application/json` header, and a JSON-serialized body with the health fields.
     """
     import os
     logger.info("Health check requested")

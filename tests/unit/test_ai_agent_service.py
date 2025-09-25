@@ -14,7 +14,20 @@ class TestAIAgentService(unittest.TestCase):
     """Test cases for AI agent service."""
     
     def setUp(self):
-        """Set up test fixtures."""
+        """
+        Initialize common test fixtures and sample data used by the test cases.
+        
+        Creates:
+        - self.ai_service: an AIAgentService instance used to exercise service methods.
+        - self.sample_diff_data: a dict representing a repository diff and metadata with keys such as
+          'diff_content', 'changed_files', 'relevant_files', 'base_branch', 'target_branch',
+          'total_files_changed', 'relevant_files_changed', and 'has_changes'.
+        - self.sample_test_plan: a dict representing a generated test plan containing 'test_cases'
+          (list of test case dicts including 'id', 'description', 'test_type', 'target_element',
+          'action', 'expected_outcome', and 'priority'), plus plan-level metadata
+          ('execution_strategy', 'estimated_duration_minutes', 'risk_level', 'summary',
+          'reasoning', 'generated_by', 'agent_model').
+        """
         self.ai_service = AIAgentService()
         self.sample_diff_data = {
             'diff_content': 'diff --git a/src/api/auth.py b/src/api/auth.py\n+new line',
@@ -257,7 +270,12 @@ class TestAIAgentService(unittest.TestCase):
         self.assertFalse(result)
     
     def test_validate_test_plan_missing_test_case_fields(self):
-        """Test validation of test plan with test cases missing required fields."""
+        """
+        Checks that validate_test_plan rejects a plan whose test cases lack required fields.
+        
+        Constructs a test plan containing a single incomplete test case (missing required fields)
+        and asserts that validate_test_plan returns a falsy value.
+        """
         invalid_plan = self.sample_test_plan.copy()
         invalid_plan['test_cases'] = [
             {

@@ -13,7 +13,11 @@ class TestSimulationServiceAI(unittest.TestCase):
     """Test cases for simulation service AI integration."""
     
     def setUp(self):
-        """Set up test fixtures."""
+        """
+        Initialize fixtures used by TestSimulationServiceAI.
+        
+        Sets up a SimulationService instance, a sample SimulationJobModel (with identifiers, PR URLs/SHAs, and PENDING status), a test repository path, sample diff metadata describing changed and relevant files, and a sample AI-generated UI test plan containing one high-priority test case along with execution strategy, estimated duration, risk level, summary, reasoning, and agent model.
+        """
         self.simulation_service = SimulationService()
         self.test_job = SimulationJobModel(
             job_id="test_job_123",

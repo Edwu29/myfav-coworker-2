@@ -313,6 +313,21 @@ new file mode 100644"""
     def test_validate_environment_failure(self):
         """Test environment validation failure."""
         def mock_import(name, *args):
+            """
+            Conditionally import a module, raising ImportError when the requested module is "playwright".
+            
+            Attempts to import the module specified by `name` using the built-in import mechanism. If `name` is "playwright", raises ImportError with the message "Playwright not found".
+            
+            Parameters:
+                name (str): The fully qualified name of the module to import.
+                *args: Additional arguments forwarded to the built-in __import__.
+            
+            Returns:
+                module: The imported module object when import succeeds.
+            
+            Raises:
+                ImportError: If `name` is "playwright" or if the underlying import fails for other reasons.
+            """
             if name == 'playwright':
                 raise ImportError("Playwright not found")
             return __import__(name, *args)
