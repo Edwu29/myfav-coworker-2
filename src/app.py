@@ -78,12 +78,18 @@ def handle_health_check() -> Dict[str, Any]:
     Returns:
         200 OK response with JSON health status
     """
+    import os
     logger.info("Health check requested")
+    
+    # Debug environment variables
+    table_name = os.getenv('DYNAMODB_TABLE_NAME', 'NOT_SET')
+    logger.info(f"Environment DYNAMODB_TABLE_NAME: {table_name}")
 
     response_body = {
         "status": "healthy",
         "service": "myfav-coworker",
         "version": "1.0.0",
+        "table_name": table_name
     }
 
     return {

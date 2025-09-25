@@ -127,17 +127,36 @@ def process_simulation_job(message_data: Dict[str, Any]) -> Dict[str, Any]:
             logger.error(f"Failed to update job status to SIMULATION_RUNNING: {e}")
             return {"status": "error", "job_id": job_id, "error": f"Failed to update job status: {str(e)}"}
         
-        # Get repository path from previous processing
+        # Get repository path and clone if needed
         repo_path = repo_service.get_repository_path(job.pr_owner, job.pr_repo)
         
         if not os.path.exists(repo_path):
-            logger.error(f"Repository path does not exist: {repo_path}")
-            # Update job status to failed
-            job.status = JobStatus.FAILED
-            job.error_message = f"Repository not found: {repo_path}"
-            job.completed_at = datetime.now(timezone.utc)
-            table.put_item(Item=job.to_dynamodb_item())
-            return {"status": "error", "job_id": job_id, "error": "Repository not found"}
+            logger.info(f"Repository not found, cloning: {repo_path}")
+            try:
+                # Get user's GitHub token for cloning
+                github_token = user_service.get_decrypted_github_token_by_user_id(job.user_id)
+                
+                # Construct repository URL
+                repo_url = f"https://github.com/{job.pr_owner}/{job.pr_repo}.git"
+                target_dir = f"{job.pr_owner}_{job.pr_repo}"
+                
+                # Clone the repository
+                cloned_path = repo_service.clone_repository(
+                    repo_url=repo_url,
+                    access_token=github_token,
+                    target_dir=target_dir
+                )
+                
+                logger.info(f"Successfully cloned repository to: {cloned_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to clone repository {job.pr_owner}/{job.pr_repo}: {e}")
+                # Update job status to failed
+                job.status = JobStatus.FAILED
+                job.error_message = f"Failed to clone repository: {str(e)}"
+                job.completed_at = datetime.now(timezone.utc)
+                table.put_item(Item=job.to_dynamodb_item())
+                return {"status": "error", "job_id": job_id, "error": f"Repository clone failed: {str(e)}"}
         
         # Ensure correct branch is checked out
         try:
