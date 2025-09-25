@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 
@@ -317,3 +317,246 @@ class RepositoryService:
                 'error': str(e),
                 'warnings': ['Repository validation failed']
             }
+    
+    def calculate_diff(self, repo_path: str, base_branch: str = "main", target_branch: str = "HEAD") -> Dict[str, Any]:
+        """
+        Calculate Git diff between two branches.
+        
+        Args:
+            repo_path: Path to local repository
+            base_branch: Base branch to compare against (default: main)
+            target_branch: Target branch to compare (default: HEAD)
+            
+        Returns:
+            Dictionary containing diff data and metadata
+            
+        Raises:
+            RepositoryError: If diff calculation fails
+        """
+        try:
+            if not os.path.exists(repo_path):
+                raise RepositoryError(f"Repository path does not exist: {repo_path}")
+            
+            # Get diff with file names and stats
+            diff_cmd = ['git', 'diff', '--name-status', f'{base_branch}...{target_branch}']
+            diff_result = subprocess.run(
+                diff_cmd,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if diff_result.returncode != 0:
+                logger.error(f"Git diff failed: {diff_result.stderr}")
+                raise RepositoryError(f"Failed to calculate diff: {diff_result.stderr}")
+            
+            # Get full diff content
+            full_diff_cmd = ['git', 'diff', f'{base_branch}...{target_branch}']
+            full_diff_result = subprocess.run(
+                full_diff_cmd,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if full_diff_result.returncode != 0:
+                logger.error(f"Git full diff failed: {full_diff_result.stderr}")
+                raise RepositoryError(f"Failed to get full diff: {full_diff_result.stderr}")
+            
+            # Parse changed files
+            changed_files = self._parse_diff_files(diff_result.stdout)
+            
+            # Filter relevant files (exclude binary, config files)
+            relevant_files = self._filter_relevant_files(changed_files)
+            
+            diff_data = {
+                'base_branch': base_branch,
+                'target_branch': target_branch,
+                'diff_content': full_diff_result.stdout,
+                'changed_files': changed_files,
+                'relevant_files': relevant_files,
+                'total_files_changed': len(changed_files),
+                'relevant_files_changed': len(relevant_files),
+                'has_changes': len(changed_files) > 0
+            }
+            
+            logger.info(f"Calculated diff: {len(changed_files)} files changed, {len(relevant_files)} relevant")
+            return diff_data
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Git diff operation timed out")
+            raise RepositoryError("Diff calculation operation timed out")
+        except Exception as e:
+            logger.error(f"Failed to calculate diff: {e}")
+            raise RepositoryError(f"Diff calculation failed: {e}")
+    
+    def _parse_diff_files(self, diff_output: str) -> List[Dict[str, str]]:
+        """
+        Parse git diff --name-status output into structured data.
+        
+        Args:
+            diff_output: Output from git diff --name-status
+            
+        Returns:
+            List of file change dictionaries
+        """
+        files = []
+        for line in diff_output.strip().split('\n'):
+            if not line:
+                continue
+            
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                status = parts[0]
+                filename = parts[1]
+                
+                files.append({
+                    'status': status,
+                    'filename': filename,
+                    'change_type': self._get_change_type(status)
+                })
+        
+        return files
+    
+    def _get_change_type(self, status: str) -> str:
+        """
+        Convert git status code to human-readable change type.
+        
+        Args:
+            status: Git status code (A, M, D, etc.)
+            
+        Returns:
+            Human-readable change type
+        """
+        status_map = {
+            'A': 'added',
+            'M': 'modified',
+            'D': 'deleted',
+            'R': 'renamed',
+            'C': 'copied',
+            'T': 'type_changed'
+        }
+        return status_map.get(status[0], 'unknown')
+    
+    def _filter_relevant_files(self, changed_files: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        Filter changed files to focus on relevant source code files.
+        
+        Args:
+            changed_files: List of changed file dictionaries
+            
+        Returns:
+            Filtered list of relevant files
+        """
+        # File extensions to include (source code)
+        relevant_extensions = {
+            '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h',
+            '.cs', '.php', '.rb', '.go', '.rs', '.swift', '.kt', '.scala',
+            '.html', '.css', '.scss', '.sass', '.less', '.vue', '.svelte'
+        }
+        
+        # File patterns to exclude
+        exclude_patterns = {
+            '.git', '.gitignore', '.gitmodules',
+            'package-lock.json', 'yarn.lock', 'Pipfile.lock',
+            '.env', '.env.local', '.env.production',
+            'node_modules', '__pycache__', '.pytest_cache',
+            '.DS_Store', 'Thumbs.db',
+            '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico',
+            '.pdf', '.doc', '.docx', '.zip', '.tar', '.gz'
+        }
+        
+        relevant_files = []
+        for file_info in changed_files:
+            filename = file_info['filename']
+            file_path = Path(filename)
+            
+            # Check if file should be excluded
+            should_exclude = False
+            for pattern in exclude_patterns:
+                if pattern in filename.lower() or filename.lower().endswith(pattern):
+                    should_exclude = True
+                    break
+            
+            if should_exclude:
+                continue
+            
+            # Include if it has a relevant extension or is a common config file
+            if (file_path.suffix.lower() in relevant_extensions or
+                filename in ['Dockerfile', 'Makefile', 'requirements.txt', 'setup.py', 'pyproject.toml']):
+                relevant_files.append(file_info)
+        
+        return relevant_files
+    
+    def get_repository_path(self, owner: str, repo: str) -> str:
+        """
+        Get the local path for a repository based on owner/repo.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            
+        Returns:
+            Path to repository directory
+        """
+        # Create a consistent directory name based on owner/repo
+        repo_dir = f"{owner}_{repo}"
+        repo_path = self.base_path / repo_dir
+        return str(repo_path)
+    
+    def checkout_pr_branch(self, repo_path: str, pr_head_sha: str) -> bool:
+        """
+        Checkout to a specific commit SHA (PR head).
+        
+        Args:
+            repo_path: Path to local repository
+            pr_head_sha: Commit SHA to checkout
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            RepositoryError: If checkout operation fails
+        """
+        try:
+            if not os.path.exists(repo_path):
+                raise RepositoryError(f"Repository path does not exist: {repo_path}")
+            
+            # First, fetch all refs to ensure we have the latest commits
+            fetch_cmd = ['git', 'fetch', 'origin', '+refs/*:refs/*']
+            fetch_result = subprocess.run(
+                fetch_cmd,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if fetch_result.returncode != 0:
+                logger.warning(f"Git fetch warning: {fetch_result.stderr}")
+            
+            # Checkout the specific commit SHA
+            checkout_cmd = ['git', 'checkout', pr_head_sha]
+            result = subprocess.run(
+                checkout_cmd,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"Git checkout SHA failed: {result.stderr}")
+                raise RepositoryError(f"Failed to checkout SHA {pr_head_sha}: {result.stderr}")
+            
+            logger.info(f"Successfully checked out commit SHA: {pr_head_sha}")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Git checkout SHA operation timed out")
+            raise RepositoryError("SHA checkout operation timed out")
+        except Exception as e:
+            logger.error(f"Failed to checkout SHA {pr_head_sha}: {e}")
+            raise RepositoryError(f"SHA checkout failed: {e}")

@@ -17,26 +17,34 @@ class UserService:
     
     def __init__(self):
         """Initialize user service with DynamoDB client."""
-        # Check if running locally (SAM local sets AWS_SAM_LOCAL=true)
-        is_local = os.getenv('AWS_SAM_LOCAL') == 'true' or os.getenv('AWS_ENDPOINT_URL')
+        # Check if explicitly using local DynamoDB endpoint
+        local_endpoint = os.getenv('DYNAMODB_ENDPOINT_URL', None)
         
-        if is_local:
-            # Use local DynamoDB
+        if local_endpoint:
+            # Use local DynamoDB with explicit endpoint
             self.dynamodb = boto3.resource(
                 'dynamodb',
-                endpoint_url='http://host.docker.internal:8000',
+                endpoint_url=local_endpoint,
                 region_name='us-east-1',
                 aws_access_key_id='dummy',
                 aws_secret_access_key='dummy'
             )
             self.table_name = 'myfav-coworker-main-local'
         else:
-            # Use AWS DynamoDB
-            self.dynamodb = boto3.resource('dynamodb')
-            self.table_name = os.getenv('DYNAMODB_TABLE_NAME', 'myfav-coworker-main')
+            # Use AWS DynamoDB (default for both local SAM and deployed Lambda)
+            self.dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+            table_name_env = os.getenv('DYNAMODB_TABLE_NAME', 'myfav-coworker-main')
+            # SAM local doesn't resolve CloudFormation references properly
+            if table_name_env == 'MainTable':
+                self.table_name = 'myfav-coworker-main'
+            else:
+                self.table_name = table_name_env
         
         self.table = self.dynamodb.Table(self.table_name)
         self.encryptor = create_token_encryptor()
+        
+        # Debug logging
+        logger.info(f"UserService initialized with table: {self.table_name}, endpoint: {local_endpoint if local_endpoint else 'AWS'}")
     
     def create_user(self, github_profile: GitHubUserProfile, github_token: str) -> User:
         """Create a new user from GitHub profile and token."""
@@ -140,6 +148,17 @@ class UserService:
             return self.encryptor.decrypt_token(user.encrypted_github_token)
         except Exception as e:
             logger.error(f"Failed to decrypt GitHub token for GitHub ID {github_id}: {e}")
+            raise RuntimeError("Failed to decrypt GitHub token")
+    
+    def get_decrypted_github_token_by_user_id(self, user_id: str) -> str:
+        """Get decrypted GitHub token for a user by user ID."""
+        try:
+            user = self.get_user_by_user_id(user_id)
+            if not user:
+                raise RuntimeError("User not found")
+            return self.encryptor.decrypt_token(user.encrypted_github_token)
+        except Exception as e:
+            logger.error(f"Failed to decrypt GitHub token for user ID {user_id}: {e}")
             raise RuntimeError("Failed to decrypt GitHub token")
     
     def update_github_token(self, github_id: str, new_token: str) -> bool:

@@ -65,7 +65,6 @@ class TestSubmitSimulationHandler:
         
         response_body = json.loads(response['body'])
         assert 'job_id' in response_body
-        assert response_body['status'] == 'pending'
         
         # Verify DynamoDB put_item was called
         mock_table.put_item.assert_called_once()

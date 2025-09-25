@@ -346,6 +346,81 @@ class TestRepositoryService:
         
         assert result['valid'] is True
         assert any("approaching limit" in warning for warning in result['warnings'])
+    
+    def test_get_repository_path(self):
+        """Test getting repository path from owner and repo name."""
+        owner = "testowner"
+        repo = "testrepo"
+        
+        expected_path = os.path.join(self.temp_dir, f"{owner}_{repo}")
+        actual_path = self.repo_service.get_repository_path(owner, repo)
+        
+        assert actual_path == expected_path
+    
+    @patch('src.services.repository_service.subprocess.run')
+    def test_checkout_pr_branch_success(self, mock_run):
+        """Test successful PR branch checkout."""
+        # Create test repository directory
+        repo_path = os.path.join(self.temp_dir, "test_repo")
+        os.makedirs(repo_path)
+        
+        # Mock git fetch and checkout commands
+        mock_run.return_value = Mock(returncode=0, stderr="")
+        
+        pr_head_sha = "abc123def456"
+        result = self.repo_service.checkout_pr_branch(repo_path, pr_head_sha)
+        
+        assert result is True
+        
+        # Verify git commands were called
+        assert mock_run.call_count == 2
+        calls = mock_run.call_args_list
+        
+        # First call should be fetch
+        fetch_call = calls[0][0][0]  # First positional arg of first call
+        assert fetch_call[0:3] == ['git', 'fetch', 'origin']
+        
+        # Second call should be checkout
+        checkout_call = calls[1][0][0]  # First positional arg of second call
+        assert checkout_call == ['git', 'checkout', pr_head_sha]
+    
+    @patch('src.services.repository_service.subprocess.run')
+    def test_checkout_pr_branch_repo_not_found(self, mock_run):
+        """Test PR branch checkout with nonexistent repository."""
+        nonexistent_path = os.path.join(self.temp_dir, "nonexistent")
+        pr_head_sha = "abc123def456"
+        
+        with pytest.raises(RepositoryError) as exc_info:
+            self.repo_service.checkout_pr_branch(nonexistent_path, pr_head_sha)
+        
+        assert "does not exist" in str(exc_info.value)
+        # Git commands should not be called
+        mock_run.assert_not_called()
+    
+    @patch('src.services.repository_service.subprocess.run')
+    def test_checkout_pr_branch_checkout_failure(self, mock_run):
+        """Test PR branch checkout failure."""
+        # Create test repository directory
+        repo_path = os.path.join(self.temp_dir, "test_repo")
+        os.makedirs(repo_path)
+        
+        # Mock git fetch success, checkout failure
+        def mock_git_commands(*args, **kwargs):
+            cmd = args[0]
+            if cmd[1] == 'fetch':
+                return Mock(returncode=0, stderr="")
+            elif cmd[1] == 'checkout':
+                return Mock(returncode=1, stderr="fatal: reference is not a tree: abc123")
+            
+        mock_run.side_effect = mock_git_commands
+        
+        pr_head_sha = "abc123def456"
+        
+        with pytest.raises(RepositoryError) as exc_info:
+            self.repo_service.checkout_pr_branch(repo_path, pr_head_sha)
+        
+        assert "Failed to checkout SHA" in str(exc_info.value)
+        assert pr_head_sha in str(exc_info.value)
 
 
 # Import subprocess for the timeout test

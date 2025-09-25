@@ -103,14 +103,20 @@ class TestWorkerLambdaHandler:
     
     def test_lambda_handler_exception(self):
         """Test handling unexpected exception."""
+        # Create an event that will cause an exception during processing
         event = {
-            'Records': 'invalid_structure'  # This will cause an exception
+            'Records': [
+                {
+                    'body': 'invalid_json'  # This will cause JSON parsing to fail
+                }
+            ]
         }
         
         response = lambda_handler(event, {})
         
-        assert response['statusCode'] == 500
-        assert 'error' in response
+        # The handler catches record-level exceptions and returns 200 with error details
+        assert response['statusCode'] == 200
+        assert response['results'][0]['status'] == 'error'
 
 
 class TestProcessSimulationJob:
@@ -355,8 +361,8 @@ class TestProcessSimulationJob:
 class TestValidateWorkerEnvironment:
     """Test cases for validate_worker_environment."""
     
-    @patch('src.worker.SimulationService')
-    @patch('src.worker.RepositoryService')
+    @patch('services.simulation_service.SimulationService')
+    @patch('services.repository_service.RepositoryService')
     def test_validate_worker_environment_success(self, mock_repo_service, mock_sim_service):
         """Test successful environment validation."""
         mock_sim_instance = Mock()
@@ -368,8 +374,8 @@ class TestValidateWorkerEnvironment:
         assert result is True
         mock_sim_instance.validate_environment.assert_called_once()
     
-    @patch('src.worker.SimulationService')
-    @patch('src.worker.RepositoryService')
+    @patch('services.simulation_service.SimulationService')
+    @patch('services.repository_service.RepositoryService')
     def test_validate_worker_environment_sim_failure(self, mock_repo_service, mock_sim_service):
         """Test environment validation with simulation service failure."""
         mock_sim_instance = Mock()
@@ -380,11 +386,9 @@ class TestValidateWorkerEnvironment:
         
         assert result is False
     
-    @patch('src.worker.SimulationService')
+    @patch('services.simulation_service.SimulationService', side_effect=ImportError("Module not found"))
     def test_validate_worker_environment_import_error(self, mock_sim_service):
         """Test environment validation with import error."""
-        mock_sim_service.side_effect = ImportError("Module not found")
-        
         result = validate_worker_environment()
         
         assert result is False

@@ -13,6 +13,7 @@ from models.simulation_job import SimulationJobModel, JobStatus
 from services.user_service import UserService
 from services.repository_service import RepositoryService
 from services.simulation_service import SimulationService
+from services.sqs_service import SQSService
 
 # Configure structured logging
 logger = logging.getLogger(__name__)
@@ -31,15 +32,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Processing results
     """
     try:
-        records = event.get('Records', [])
-        logger.info(f"Processing {len(records)} SQS messages")
+        sqs_service = SQSService()
+        
+        # Receive messages from SQS
+        messages = sqs_service.receive_message(max_messages=1, wait_time=5)
+        
+        if not messages:
+            logger.info("No messages found in SQS queue")
+            return {"statusCode": 200, "processed": 0, "results": []}
+        
+        logger.info(f"Processing {len(messages)} SQS messages")
         
         results = []
         
-        for record in records:
+        for message in messages:
             try:
                 # Parse SQS message
-                message_body = json.loads(record['body'])
+                message_body = json.loads(message['Body'])
                 action = message_body.get('action')
                 
                 logger.info(f"Processing message with action: {action}")
@@ -104,22 +113,50 @@ def process_simulation_job(message_data: Dict[str, Any]) -> Dict[str, Any]:
         
         job = SimulationJobModel.from_dynamodb_item(response['Item'])
         
-        # Validate job is in correct state
-        if job.status != JobStatus.SIMULATION_RUNNING:
-            logger.warning(f"Job {job_id} is not in simulation_running state: {job.status}")
+        # Validate job is in correct state - accept PENDING jobs for processing
+        if job.status not in [JobStatus.PENDING, JobStatus.SIMULATION_RUNNING]:
+            logger.warning(f"Job {job_id} cannot be processed in current state: {job.status}")
             return {"status": "skipped", "job_id": job_id, "reason": f"Job state is {job.status}"}
         
-        # Get repository path from previous processing
+        # Update job status to SIMULATION_RUNNING
+        job.status = JobStatus.SIMULATION_RUNNING
+        try:
+            table.put_item(Item=job.to_dynamodb_item())
+            logger.info(f"Updated job {job_id} status to SIMULATION_RUNNING")
+        except Exception as e:
+            logger.error(f"Failed to update job status to SIMULATION_RUNNING: {e}")
+            return {"status": "error", "job_id": job_id, "error": f"Failed to update job status: {str(e)}"}
+        
+        # Get repository path and clone if needed
         repo_path = repo_service.get_repository_path(job.pr_owner, job.pr_repo)
         
         if not os.path.exists(repo_path):
-            logger.error(f"Repository path does not exist: {repo_path}")
-            # Update job status to failed
-            job.status = JobStatus.FAILED
-            job.error_message = f"Repository not found: {repo_path}"
-            job.completed_at = datetime.now(timezone.utc)
-            table.put_item(Item=job.to_dynamodb_item())
-            return {"status": "error", "job_id": job_id, "error": "Repository not found"}
+            logger.info(f"Repository not found, cloning: {repo_path}")
+            try:
+                # Get user's GitHub token for cloning
+                github_token = user_service.get_decrypted_github_token_by_user_id(job.user_id)
+                
+                # Construct repository URL
+                repo_url = f"https://github.com/{job.pr_owner}/{job.pr_repo}.git"
+                target_dir = f"{job.pr_owner}_{job.pr_repo}"
+                
+                # Clone the repository
+                cloned_path = repo_service.clone_repository(
+                    repo_url=repo_url,
+                    access_token=github_token,
+                    target_dir=target_dir
+                )
+                
+                logger.info(f"Successfully cloned repository to: {cloned_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to clone repository {job.pr_owner}/{job.pr_repo}: {e}")
+                # Update job status to failed
+                job.status = JobStatus.FAILED
+                job.error_message = f"Failed to clone repository: {str(e)}"
+                job.completed_at = datetime.now(timezone.utc)
+                table.put_item(Item=job.to_dynamodb_item())
+                return {"status": "error", "job_id": job_id, "error": f"Repository clone failed: {str(e)}"}
         
         # Ensure correct branch is checked out
         try:
@@ -214,12 +251,79 @@ def process_simulation_job(message_data: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "error", "job_id": job_id, "error": str(e)}
 
 
+def process_sqs_messages() -> Dict[str, Any]:
+    """
+    Poll SQS queue for messages and process them.
+    For local development when not running in Lambda.
+    
+    Returns:
+        Processing results
+    """
+    try:
+        sqs_service = SQSService()
+        
+        # Receive messages from SQS
+        messages = sqs_service.receive_message(max_messages=1, wait_time=5)
+        
+        if not messages:
+            logger.info("No messages found in SQS queue")
+            return {"statusCode": 200, "processed": 0, "results": []}
+        
+        logger.info(f"Processing {len(messages)} SQS messages")
+        
+        results = []
+        
+        for message in messages:
+            try:
+                # Parse message body
+                message_body = json.loads(message['Body'])
+                action = message_body.get('action')
+                
+                logger.info(f"Processing SQS message with action: {action}")
+                
+                if action == 'start_simulation':
+                    # Process the simulation job
+                    result = process_simulation_job(message_body)
+                    results.append(result)
+                    
+                    # Delete message if processing was successful
+                    if result.get('status') in ['completed', 'skipped']:
+                        try:
+                            sqs_service.delete_message(message['ReceiptHandle'])
+                            logger.info("Successfully deleted processed message from SQS")
+                        except Exception as e:
+                            logger.error(f"Failed to delete message from SQS: {e}")
+                    
+                else:
+                    logger.warning(f"Unknown action in SQS message: {action}")
+                    results.append({"status": "skipped", "reason": f"Unknown action: {action}"})
+                    
+                    # Delete unknown messages to prevent infinite processing
+                    try:
+                        sqs_service.delete_message(message['ReceiptHandle'])
+                    except Exception as e:
+                        logger.error(f"Failed to delete unknown message: {e}")
+                        
+            except Exception as e:
+                logger.error(f"Failed to process SQS message: {e}")
+                results.append({"status": "error", "error": str(e)})
+        
+        return {
+            "statusCode": 200,
+            "processed": len(results),
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"SQS message processing failed: {e}")
+        return {"statusCode": 500, "error": str(e)}
+
+
 def validate_worker_environment() -> bool:
     """Validate that worker environment is properly configured."""
     try:
         # Check required services can be imported
         from services.simulation_service import SimulationService
-        from services.repository_service import RepositoryService
         
         # Validate simulation service
         sim_service = SimulationService()
