@@ -17,7 +17,19 @@ class TestAIDiffIntegration(unittest.TestCase):
     """Integration tests for AI diff-based test execution workflow."""
     
     def setUp(self):
-        """Set up test fixtures."""
+        """
+        Prepare integration test fixtures and initial state for each test.
+        
+        Creates a temporary directory and a minimal Git repository, instantiates RepositoryService, AIAgentService, and SimulationService, and constructs a SimulationJobModel representing a pending pull-request job.
+        
+        Attributes:
+            temp_dir (str): Path to the temporary directory for the test repository.
+            test_repo_path (str): Path to the created test Git repository.
+            repo_service (RepositoryService): Repository service instance used to calculate diffs.
+            ai_service (AIAgentService): AI agent service instance used to generate test plans.
+            simulation_service (SimulationService): Simulation service instance used to run simulations.
+            test_job (SimulationJobModel): Preconfigured simulation job model with PR metadata and pending status.
+        """
         self.temp_dir = tempfile.mkdtemp()
         self.test_repo_path = os.path.join(self.temp_dir, "test_repo")
         os.makedirs(self.test_repo_path)
@@ -38,11 +50,19 @@ class TestAIDiffIntegration(unittest.TestCase):
         )
     
     def tearDown(self):
-        """Clean up test fixtures."""
+        """
+        Remove the temporary directory created for the test and its contents.
+        
+        This deletes the filesystem directory used during setUp for repository and file fixtures. Any errors raised while removing the directory are ignored.
+        """
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
     def _create_test_git_repo(self):
-        """Create a minimal git repository for testing."""
+        """
+        Set up a temporary Git repository at self.test_repo_path with an initial commit and a feature branch containing simple code changes.
+        
+        Creates a repository, configures a test user, adds initial project files (src/api/auth.py and README.md) and commits them to a created `main` branch. Then creates a `feature-branch` that updates src/api/auth.py and adds src/api/new_service.py, commits those changes, and checks out `main`.
+        """
         # Initialize git repo
         os.system(f"cd {self.test_repo_path} && git init")
         os.system(f"cd {self.test_repo_path} && git config user.email 'test@example.com'")
@@ -409,7 +429,11 @@ class TestAIDiffIntegrationAsync(unittest.IsolatedAsyncioTestCase):
     """Async integration tests for AI diff workflow."""
     
     async def test_async_workflow_integration(self):
-        """Test async workflow integration."""
+        """
+        Verify that the AI agent produces an appropriate test plan for an async code change.
+        
+        Creates mock diff data representing an asynchronous change, patches the AI agent to return a single test case with a `parallel` execution strategy, and asserts the generated test plan contains one test case, uses the `parallel` strategy, and that the test case description references "async".
+        """
         repo_service = RepositoryService()
         ai_service = AIAgentService()
         

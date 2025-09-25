@@ -22,14 +22,19 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    AWS Lambda handler for SQS events - processes simulation jobs.
+    Lambda entry point that polls SQS and processes simulation job messages.
     
-    Args:
-        event: SQS event with message records
-        context: Lambda context
-        
+    Polls the configured SQS queue (up to one message per invocation), parses each message body, dispatches messages with action "start_simulation" to process_simulation_job, and aggregates per-message results.
+    
+    Parameters:
+        event (Dict[str, Any]): Incoming Lambda event payload (not used for message retrieval; SQS is polled via SQSService).
+        context (Any): Lambda runtime context (unused).
+    
     Returns:
-        Processing results
+        Dict[str, Any]: A result dictionary containing:
+            - statusCode (int): HTTP-style status code (200 on success, 500 on handler error).
+            - processed (int): Number of messages processed.
+            - results (List[Dict[str, Any]]): Per-message outcome objects, or an "error" key when the handler fails.
     """
     try:
         sqs_service = SQSService()
@@ -80,13 +85,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 def process_simulation_job(message_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Process a simulation job from SQS message.
+    Process a single simulation job described by an SQS message and persist its final state.
     
-    Args:
-        message_data: SQS message body with job details
-        
+    This function locates the job by its `job_id` from the provided SQS message, validates and updates the job lifecycle state, ensures repository availability and branch checkout, executes the simulation, and writes the final job record back to the datastore. On success the job is marked complete with the simulation report; on failure the job is marked failed with an error message and partial report where appropriate.
+    
+    Parameters:
+        message_data (Dict[str, Any]): Parsed SQS message body containing at minimum the `job_id` key.
+    
     Returns:
-        Processing result
+        Dict[str, Any]: A summary of processing outcome with at least:
+            - `status`: One of `"completed"`, `"skipped"`, or `"error"`.
+            - `job_id`: The processed job identifier.
+            - `final_status`: Final job status value when available (string).
+            - `result`: Simulation result summary when present (may be `None`).
+            - `error` (optional): Error message when `status` is `"error"`.
     """
     job_id = message_data.get('job_id')
     
@@ -253,11 +265,16 @@ def process_simulation_job(message_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def process_sqs_messages() -> Dict[str, Any]:
     """
-    Poll SQS queue for messages and process them.
-    For local development when not running in Lambda.
+    Poll the configured SQS queue, process up to one message, and return per-message results for local (non-Lambda) usage.
+    
+    Receives messages from SQS, processes messages with action "start_simulation" by delegating to process_simulation_job, deletes handled or unknown messages when appropriate, and accumulates per-message results.
     
     Returns:
-        Processing results
+        result (Dict[str, Any]): A dictionary with keys:
+            - statusCode (int): HTTP-like status code (200 on success, 500 on failure).
+            - processed (int): Number of messages processed (length of "results").
+            - results (List[Dict[str, Any]]): Per-message result objects (e.g., {"status": "completed", ...}, {"status": "skipped", ...}, {"status": "error", ...}).
+            - error (str, optional): Error string present when statusCode is 500.
     """
     try:
         sqs_service = SQSService()
@@ -320,7 +337,12 @@ def process_sqs_messages() -> Dict[str, Any]:
 
 
 def validate_worker_environment() -> bool:
-    """Validate that worker environment is properly configured."""
+    """
+    Check that the worker runtime and required services are available and operational.
+    
+    Returns:
+        bool: `True` if environment validation passed, `False` otherwise.
+    """
     try:
         # Check required services can be imported
         from services.simulation_service import SimulationService

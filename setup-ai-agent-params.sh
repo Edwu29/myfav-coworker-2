@@ -16,7 +16,13 @@ if ! aws sts get-caller-identity > /dev/null 2>&1; then
     exit 1
 fi
 
-# Function to create or update SSM parameter
+# create_or_update_parameter creates or updates an AWS SSM Parameter Store parameter in $REGION.
+# It checks whether the parameter exists and either overwrites it or creates it accordingly.
+# Arguments:
+#   param_name        The full SSM parameter name (e.g., /myfav-coworker/google-api-key).
+#   param_value       The value to store for the parameter.
+#   param_type        (Optional) SSM parameter type, defaults to "String" (use "SecureString" for secrets).
+#   param_description A short description to attach to the parameter.
 create_or_update_parameter() {
     local param_name=$1
     local param_value=$2

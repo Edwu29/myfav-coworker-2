@@ -276,14 +276,19 @@ class RepositoryService:
     
     def validate_repository_constraints(self, repo_path: str, max_size_mb: int = 400) -> Dict[str, Any]:
         """
-        Validate repository meets Lambda constraints.
+        Validate that a repository's total size is within a given maximum size.
         
-        Args:
-            repo_path: Path to repository
-            max_size_mb: Maximum allowed size in MB (default: 400MB for Lambda /tmp)
-            
+        Parameters:
+            repo_path (str): Path to the repository directory to measure.
+            max_size_mb (int): Maximum allowed repository size in megabytes (default 400).
+        
         Returns:
-            Validation results dictionary
+            dict: Validation result containing:
+                - 'valid' (bool): True if repository size is less than or equal to max_size_mb, False otherwise.
+                - 'size_bytes' (int): Total size in bytes.
+                - 'size_mb' (float): Total size in megabytes (rounded to 2 decimals).
+                - 'max_size_mb' (int): The provided maximum size in megabytes.
+                - 'warnings' (List[str]): Warning messages for nearing or exceeding the limit.
         """
         try:
             size_bytes = self.get_repository_size(repo_path)
@@ -320,18 +325,29 @@ class RepositoryService:
     
     def calculate_diff(self, repo_path: str, base_branch: str = "main", target_branch: str = "HEAD") -> Dict[str, Any]:
         """
-        Calculate Git diff between two branches.
+        Compute a structured diff between two branches in a local repository.
         
-        Args:
-            repo_path: Path to local repository
-            base_branch: Base branch to compare against (default: main)
-            target_branch: Target branch to compare (default: HEAD)
-            
+        Parameters:
+            repo_path (str): Path to the local git repository to inspect.
+            base_branch (str): Base branch to compare against (default "main").
+            target_branch (str): Target branch or ref to compare (default "HEAD").
+        
         Returns:
-            Dictionary containing diff data and metadata
-            
+            dict: A dictionary containing diff data and metadata with the following keys:
+                - base_branch (str): The base branch used for the comparison.
+                - target_branch (str): The target branch/ref used for the comparison.
+                - diff_content (str): Full git diff output between the branches.
+                - changed_files (List[Dict[str, str]]): Parsed list of changed files with keys
+                  like `status`, `filename`, and `change_type`.
+                - relevant_files (List[Dict[str, str]]): Subset of `changed_files` considered
+                  relevant by repository heuristics (source/config files).
+                - total_files_changed (int): Number of entries in `changed_files`.
+                - relevant_files_changed (int): Number of entries in `relevant_files`.
+                - has_changes (bool): `true` if any files changed, `false` otherwise.
+        
         Raises:
-            RepositoryError: If diff calculation fails
+            RepositoryError: If the repository path does not exist, git commands fail, or the
+            diff operation times out.
         """
         try:
             if not os.path.exists(repo_path):
@@ -394,13 +410,20 @@ class RepositoryService:
     
     def _parse_diff_files(self, diff_output: str) -> List[Dict[str, str]]:
         """
-        Parse git diff --name-status output into structured data.
+        Parse the output of `git diff --name-status` into a list of structured file-change records.
         
-        Args:
-            diff_output: Output from git diff --name-status
-            
+        Parameters:
+            diff_output (str): Raw stdout from `git diff --name-status`.
+        
         Returns:
-            List of file change dictionaries
+            List[Dict[str, str]]: A list of dictionaries, each with keys:
+                - 'status': the raw git status code (e.g., 'A', 'M', 'D', 'R', ...),
+                - 'filename': the affected path as reported by git,
+                - 'change_type': a human-readable change type derived from the status.
+        
+        Notes:
+            - Empty lines in the input are ignored.
+            - Lines are expected to be tab-separated; only lines with at least two tab-separated fields are included.
         """
         files = []
         for line in diff_output.strip().split('\n'):
@@ -422,13 +445,13 @@ class RepositoryService:
     
     def _get_change_type(self, status: str) -> str:
         """
-        Convert git status code to human-readable change type.
+        Map a git --name-status status code to a human-readable change type.
         
-        Args:
-            status: Git status code (A, M, D, etc.)
-            
+        Parameters:
+            status (str): Git status code string (e.g., 'A', 'M', 'D', 'R', 'C', 'T').
+        
         Returns:
-            Human-readable change type
+            str: One of 'added', 'modified', 'deleted', 'renamed', 'copied', 'type_changed', or 'unknown'.
         """
         status_map = {
             'A': 'added',
@@ -442,13 +465,13 @@ class RepositoryService:
     
     def _filter_relevant_files(self, changed_files: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """
-        Filter changed files to focus on relevant source code files.
+        Filter a list of changed file records to those considered relevant source or configuration files.
         
-        Args:
-            changed_files: List of changed file dictionaries
-            
+        Parameters:
+            changed_files (List[Dict[str, str]]): List of change records where each dict contains at least a 'filename' key.
+        
         Returns:
-            Filtered list of relevant files
+            List[Dict[str, str]]: Subset of the input list containing only entries whose filenames are considered relevant source files or common configuration files.
         """
         # File extensions to include (source code)
         relevant_extensions = {
@@ -492,14 +515,10 @@ class RepositoryService:
     
     def get_repository_path(self, owner: str, repo: str) -> str:
         """
-        Get the local path for a repository based on owner/repo.
+        Compute the local filesystem path for a repository under the service's base_path using the pattern "{owner}_{repo}".
         
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            
         Returns:
-            Path to repository directory
+            repo_path (str): String path to the repository directory (base_path/{owner}_{repo}).
         """
         # Create a consistent directory name based on owner/repo
         repo_dir = f"{owner}_{repo}"
@@ -508,17 +527,17 @@ class RepositoryService:
     
     def checkout_pr_branch(self, repo_path: str, pr_head_sha: str) -> bool:
         """
-        Checkout to a specific commit SHA (PR head).
+        Check out the repository at repo_path to the specified commit SHA (PR head).
         
-        Args:
-            repo_path: Path to local repository
-            pr_head_sha: Commit SHA to checkout
-            
+        Parameters:
+            repo_path (str): Path to the local Git repository.
+            pr_head_sha (str): Commit SHA to check out.
+        
         Returns:
-            True if successful
-            
+            True if the commit was successfully checked out.
+        
         Raises:
-            RepositoryError: If checkout operation fails
+            RepositoryError: If the repository path does not exist, the checkout fails, or the operation times out.
         """
         try:
             if not os.path.exists(repo_path):

@@ -15,7 +15,11 @@ class SQSService:
     """Service for managing SQS operations for simulation jobs."""
     
     def __init__(self):
-        """Initialize SQS service with configuration."""
+        """
+        Set up the SQS client and default queue configuration for the service.
+        
+        Reads SIMULATION_QUEUE_NAME (default 'myfav-coworker-simulation-queue') to determine the queue name, reads SQS_QUEUE_URL to initialize a cached queue URL if present, and creates a boto3 SQS client configured for region 'us-east-1'.
+        """
         # Use us-east-1 region where your queue exists
         self.sqs_client = boto3.client('sqs', region_name='us-east-1')
         self.queue_name = os.getenv('SIMULATION_QUEUE_NAME', 'myfav-coworker-simulation-queue')
@@ -23,13 +27,16 @@ class SQSService:
         
     def get_queue_url(self) -> str:
         """
-        Get SQS queue URL for simulation jobs.
+        Retrieve and cache the SQS queue URL for the configured simulation queue.
+        
+        If the URL is already cached, the cached value is returned. Otherwise the method queries AWS SQS for the queue URL, caches it, and returns it.
         
         Returns:
-            Queue URL string
-            
+            str: The SQS queue URL.
+        
         Raises:
-            Exception: If queue URL cannot be retrieved
+            Exception: If the configured queue does not exist.
+            Exception: If the queue URL cannot be retrieved for any other reason.
         """
         if self._queue_url:
             return self._queue_url
@@ -55,16 +62,16 @@ class SQSService:
     
     def send_message(self, message_body: Dict[str, Any]) -> str:
         """
-        Send message to simulation queue.
+        Send a JSON-serializable dictionary as a message to the configured simulation SQS queue.
         
         Args:
-            message_body: Message data to send
-            
+            message_body (Dict[str, Any]): The message payload; will be serialized to JSON and sent as the SQS MessageBody.
+        
         Returns:
-            Message ID
-            
+            str: The SQS MessageId assigned to the sent message.
+        
         Raises:
-            Exception: If message cannot be sent
+            Exception: If the message cannot be sent; rethrows a descriptive exception on failure.
         """
         try:
             import json
@@ -88,17 +95,17 @@ class SQSService:
     
     def receive_message(self, max_messages: int = 1, wait_time: int = 5) -> List[Dict[str, Any]]:
         """
-        Receive messages from simulation queue.
+        Retrieve a batch of messages from the simulation SQS queue.
         
-        Args:
-            max_messages: Maximum number of messages to receive (1-10)
-            wait_time: Long polling wait time in seconds (0-20)
-            
+        Parameters:
+            max_messages (int): Requested maximum number of messages; value will be capped at 10.
+            wait_time (int): Long-poll wait time in seconds; value will be capped at 20.
+        
         Returns:
-            List of message dictionaries
-            
+            List[Dict[str, Any]]: A list of message dictionaries as returned by boto3 SQS (each typically contains keys such as `MessageId`, `ReceiptHandle`, `Body`, and `Attributes`). Returns an empty list if no messages are available.
+        
         Raises:
-            Exception: If messages cannot be received
+            Exception: If messages cannot be retrieved from the queue.
         """
         try:
             queue_url = self.get_queue_url()
@@ -120,16 +127,16 @@ class SQSService:
     
     def delete_message(self, receipt_handle: str) -> bool:
         """
-        Delete a processed message from the queue.
+        Delete a processed message from the configured SQS queue.
         
-        Args:
-            receipt_handle: Receipt handle from received message
-            
+        Parameters:
+            receipt_handle (str): The SQS receipt handle obtained from a received message.
+        
         Returns:
-            True if message was deleted successfully
-            
+            bool: `True` if the message was deleted successfully.
+        
         Raises:
-            Exception: If message cannot be deleted
+            Exception: If the message could not be deleted.
         """
         try:
             queue_url = self.get_queue_url()
@@ -148,10 +155,10 @@ class SQSService:
 
     def validate_environment(self) -> bool:
         """
-        Validate SQS service environment configuration.
+        Check that the SQS service is properly configured by attempting to retrieve the queue URL.
         
         Returns:
-            True if environment is valid
+            bool: `True` if the queue URL could be retrieved and configuration appears valid, `False` otherwise.
         """
         try:
             # Test queue URL retrieval

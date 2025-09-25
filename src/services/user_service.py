@@ -16,7 +16,11 @@ class UserService:
     """Service for user data management in DynamoDB."""
     
     def __init__(self):
-        """Initialize user service with DynamoDB client."""
+        """
+        Initialize the UserService by configuring the DynamoDB resource, selecting the DynamoDB table, creating the table resource, and initializing the token encryptor.
+        
+        If the environment variable DYNAMODB_ENDPOINT_URL is set, use that endpoint and the local table name "myfav-coworker-main-local" with dummy credentials; otherwise create a DynamoDB resource in "us-east-1" and determine the table name from DYNAMODB_TABLE_NAME (treating "MainTable" as "myfav-coworker-main"). The method sets self.dynamodb, self.table_name, self.table, and self.encryptor, and logs the initialization details.
+        """
         # Check if explicitly using local DynamoDB endpoint
         local_endpoint = os.getenv('DYNAMODB_ENDPOINT_URL', None)
         
@@ -47,7 +51,19 @@ class UserService:
         logger.info(f"UserService initialized with table: {self.table_name}, endpoint: {local_endpoint if local_endpoint else 'AWS'}")
     
     def create_user(self, github_profile: GitHubUserProfile, github_token: str) -> User:
-        """Create a new user from GitHub profile and token."""
+        """
+        Create and persist a new User record from a GitHub profile and token.
+        
+        Parameters:
+            github_profile (GitHubUserProfile): GitHub profile containing `id` and `login` used to populate the user record.
+            github_token (str): Plaintext GitHub access token to be encrypted and stored on the user record.
+        
+        Returns:
+            User: The created User with an assigned `user_id`, encrypted token, and `created_at`/`last_login_at` timestamps.
+        
+        Raises:
+            RuntimeError: If writing the user record to DynamoDB fails.
+        """
         user_id = str(uuid.uuid4())
         encrypted_token = self.encryptor.encrypt_token(github_token)
         
@@ -140,7 +156,18 @@ class UserService:
             raise RuntimeError(f"Failed to update user: {e}")
     
     def get_decrypted_github_token(self, github_id: str) -> str:
-        """Get decrypted GitHub token for a user by GitHub ID."""
+        """
+        Retrieve and decrypt a user's GitHub access token using their GitHub ID.
+        
+        Parameters:
+            github_id (str): The GitHub account ID used to look up the user.
+        
+        Returns:
+            str: The decrypted GitHub access token.
+        
+        Raises:
+            RuntimeError: If the user is not found or if decryption fails.
+        """
         try:
             user = self.get_user_by_github_id(github_id)
             if not user:
@@ -151,7 +178,18 @@ class UserService:
             raise RuntimeError("Failed to decrypt GitHub token")
     
     def get_decrypted_github_token_by_user_id(self, user_id: str) -> str:
-        """Get decrypted GitHub token for a user by user ID."""
+        """
+        Retrieve and decrypt a user's GitHub access token by user ID.
+        
+        Parameters:
+            user_id (str): The user's identifier (UUID).
+        
+        Returns:
+            str: The decrypted GitHub access token.
+        
+        Raises:
+            RuntimeError: If no user exists for the given user_id or if decryption/retrieval fails.
+        """
         try:
             user = self.get_user_by_user_id(user_id)
             if not user:
@@ -162,7 +200,16 @@ class UserService:
             raise RuntimeError("Failed to decrypt GitHub token")
     
     def update_github_token(self, github_id: str, new_token: str) -> bool:
-        """Update user's GitHub token."""
+        """
+        Update the stored GitHub access token for a user by replacing it with an encrypted value.
+        
+        Parameters:
+            github_id (str): The GitHub identifier for the user whose token will be updated.
+            new_token (str): The plaintext GitHub access token to encrypt and store.
+        
+        Returns:
+            bool: `True` if the token was successfully updated in the database, `False` otherwise.
+        """
         try:
             encrypted_token = self.encryptor.encrypt_token(new_token)
             

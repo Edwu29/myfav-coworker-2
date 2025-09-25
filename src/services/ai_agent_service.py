@@ -79,14 +79,14 @@ diff_agent = Agent[DiffData, TestPlan](
 @diff_agent.tool
 async def analyze_file_changes(ctx: RunContext[DiffData], file_type: str) -> str:
     """
-    Analyze specific file type changes for test planning.
+    Summarizes changed files of a specified type from the provided diff context.
     
-    Args:
-        ctx: Runtime context containing diff data
-        file_type: Type of files to analyze ('python', 'javascript', 'api', 'config')
-        
+    Parameters:
+        ctx (RunContext[DiffData]): Execution context whose `deps` contains the diff data to analyze.
+        file_type (str): File type to filter by (e.g., 'python', 'javascript', 'api', 'config').
+    
     Returns:
-        Analysis summary for the file type
+        analysis (str): Text summary listing matching files and their change types, or a message stating no files of the given type changed.
     """
     diff_data = ctx.deps
     
@@ -106,7 +106,18 @@ async def analyze_file_changes(ctx: RunContext[DiffData], file_type: str) -> str
 
 
 def _matches_file_type(filename: str, file_type: str) -> bool:
-    """Check if filename matches the specified file type."""
+    """
+    Determine whether a filename's extension corresponds to the given file type.
+    
+    Supported file_type values: 'python', 'javascript', 'api', 'config'.
+    
+    Parameters:
+        filename (str): The filename or path to check.
+        file_type (str): The file type key to match against supported extensions.
+    
+    Returns:
+        bool: `True` if the filename ends with any extension associated with `file_type`, `False` otherwise.
+    """
     type_extensions = {
         'python': ['.py'],
         'javascript': ['.js', '.ts', '.jsx', '.tsx'],
@@ -127,16 +138,24 @@ class AIAgentService:
         
     async def generate_test_plan(self, diff_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Generate a test plan from Git diff data using AI agent.
+        Generate an AI-produced test plan from provided Git diff information.
         
-        Args:
-            diff_data: Dictionary containing diff information
-            
+        Parameters:
+            diff_data (Dict[str, Any]): Dictionary matching DiffData model fields describing the git diff and changed files.
+        
         Returns:
-            Dictionary containing generated test plan
-            
+            Dict[str, Any]: Structured test plan with keys:
+                - test_cases: list of test case dicts (each from TestCase.model_dump())
+                - execution_strategy: execution strategy string
+                - estimated_duration_minutes: estimated duration in minutes
+                - risk_level: risk level string
+                - summary: short summary of the plan
+                - reasoning: agent's reasoning for the plan
+                - generated_by: source indicator ('ai_agent' for generated plans)
+                - agent_model: model identifier used to generate the plan
+        
         Raises:
-            AIAgentError: If test plan generation fails
+            AIAgentError: If the AI agent fails to produce a valid test plan or an internal error occurs.
         """
         try:
             # Convert diff data to Pydantic model
@@ -247,13 +266,21 @@ class AIAgentService:
     
     def _create_empty_test_plan(self, reason: str) -> Dict[str, Any]:
         """
-        Create an empty test plan when no changes are detected.
+        Produce a minimal test plan used when no relevant changes are detected.
         
-        Args:
-            reason: Reason for empty test plan
-            
+        Parameters:
+            reason (str): Explanation for why no test plan was generated.
+        
         Returns:
-            Empty test plan dictionary
+            Dict[str, Any]: A test plan dictionary with the following keys:
+                - test_cases: empty list
+                - execution_strategy: 'skip'
+                - estimated_duration_minutes: 0
+                - risk_level: 'low'
+                - summary: human-readable summary including the provided reason
+                - reasoning: the provided reason
+                - generated_by: 'fallback'
+                - agent_model: 'gemini-2.5-pro'
         """
         return {
             'test_cases': [],
@@ -268,13 +295,16 @@ class AIAgentService:
     
     def validate_test_plan(self, test_plan: Dict[str, Any]) -> bool:
         """
-        Validate that a test plan has the required structure.
+        Validate the structure and required fields of a test plan dictionary.
         
-        Args:
-            test_plan: Test plan dictionary to validate
-            
+        Checks that the test plan contains all required top-level keys and that 'test_cases'
+        is a list where each test case contains the required fields.
+        
+        Parameters:
+            test_plan (Dict[str, Any]): Dictionary representing a test plan produced by the agent.
+        
         Returns:
-            True if valid, False otherwise
+            bool: `True` if the test plan contains all required fields and each test case is well-formed, `False` otherwise.
         """
         required_fields = [
             'test_cases', 'execution_strategy', 'estimated_duration_minutes',
